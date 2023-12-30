@@ -1,23 +1,19 @@
 // Keyword detection using Porcupine
 
 import { Porcupine } from "@picovoice/porcupine-node";
+import path from "path";
+import settings from "../../settings";
 
-var _porcupineKey: string;
-var _wakewordPaths: string[];
-var _sensitivities: number[];
+var porcupineKey = settings.PICOVOICE_KEY;
+const wakewordPath = path.resolve('wakeword', settings.WAKEWORD);
+var sensitivity = parseFloat(settings.SENSITIVITY);
 var _detectionMap = new Map<string, KeywordDetectionDetails>();
-
-export function setPorcupineParams(porcupineKey: string, wakewordPaths: string[], sensitivities: number[]) {
-    _porcupineKey = porcupineKey;
-    _wakewordPaths = wakewordPaths;
-    _sensitivities = sensitivities;
-}
 
 // TODO dispose porcupine instances
 function getKeywordDetectionDetails(userId: string) {
     var detectionDetails = _detectionMap.get(userId);
     if (detectionDetails === undefined) {
-        var porcupine = new Porcupine(_porcupineKey, _wakewordPaths, _sensitivities);
+        var porcupine = new Porcupine(porcupineKey, [wakewordPath], [sensitivity]);
         detectionDetails = {
             porcupine: porcupine,
             porcupineBuffer: Buffer.alloc(porcupine.frameLength * 2),

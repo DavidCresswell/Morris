@@ -1,10 +1,7 @@
 import { Leopard } from "@picovoice/leopard-node";
+import settings from "../../settings";
 
-var leopard : Leopard;
-
-export function setLeopardParams(accessKey: string) {
-    leopard = new Leopard(accessKey);
-}
+const leopard = new Leopard(settings.PICOVOICE_KEY);
 
 export function speechToText(buffer: Buffer) {
     const result = leopard.process(new Int16Array(buffer));

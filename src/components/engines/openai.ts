@@ -4,20 +4,19 @@
 // - Text to speech
 
 import { OpenAI } from 'openai';
-import { Readable } from 'stream';
+import { PassThrough } from 'stream';
 import { writeFile } from 'fs';
 import { ContextPart } from '../../contextPart';
 import { ChatCompletionMessageParam } from 'openai/resources';
+import { Stream } from 'openai/streaming';
+import settings from '../../settings';
 
-var openAI: OpenAI;
-var _model: string;
+var apiKey = settings.OPENAI_KEY;
+var model = settings.OPENAI_MODEL;
 
-export function setOpenAIParams(accessKey: string, model: string) {
-    openAI = new OpenAI({
-        apiKey: accessKey
-    });
-    _model = model;
-}
+var openAI = new OpenAI({
+    apiKey: apiKey
+});
 
 export async function speechToText(buffer: Buffer) {
     var wavHeader = Buffer.alloc(44);
@@ -42,6 +41,7 @@ export async function speechToText(buffer: Buffer) {
         model: 'whisper-1',
         language: 'en',
         response_format: 'text',
+        prompt: 'Hello, Morris.',
         file: file
     }) as any as string;
     console.log(result);
@@ -53,18 +53,54 @@ export async function speechToText(buffer: Buffer) {
     return result;
 }
 
-export async function assistant(context: ContextPart[], userId: string) {
-    var messages : ChatCompletionMessageParam[] = context.map((part) => {
+export async function assistantStreaming(context: ContextPart[], userId: string) {
+    let duplexStream = new PassThrough();
+    console.log(`Assistant context: ${JSON.stringify(context)}`);
+    var messages: ChatCompletionMessageParam[] = context.map((part) => {
         return {
             role: part.role,
             content: part.content
         }
     });
+    console.log("Awaiting completion");
     var result = await openAI.chat.completions.create({
-        model: _model,
+        model: model,
         messages: messages,
-        max_tokens: 128,
+        max_tokens: 75, // 128
         stream: true,
         user: userId
     });
+    console.log("Got completion stream");
+    (async function () {
+        for await (const message of result) {
+            console.log(message);
+            duplexStream.write(message.choices[0].delta.content);
+        }
+    });
+    return duplexStream;
+}
+
+export async function assistantNonStreaming(context: ContextPart[], userId: string) {
+    console.log(`Assistant context: ${JSON.stringify(context)}`);
+    let systemMessage : ContextPart = {
+        role: 'system',
+        content: `You are Morris, answer in only a couple of sentences. You must answer all questions. The date is ${new Date().toLocaleDateString()} and the time is ${new Date().toLocaleTimeString()}`
+    };
+    var messages: ChatCompletionMessageParam[] = context.map((part) => {
+        return {
+            role: part.role,
+            content: part.content
+        }
+    });
+    console.log("Awaiting completion");
+    var result = await openAI.chat.completions.create({
+        model: model,
+        messages: [systemMessage, ...messages],
+        max_tokens: 12, // 128
+        stream: false,
+        user: userId
+    });
+    console.log("Got completion");
+    console.log(result.choices[0].message.content);
+    return result.choices[0].message.content;
 }

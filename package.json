@@ -9,6 +9,7 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "@charactr/api-sdk": "^2.3.0",
     "@discordjs/voice": "^0.16.1",
     "@picovoice/leopard-node": "^2.0.1",
     "@picovoice/porcupine-node": "^3.0.1",

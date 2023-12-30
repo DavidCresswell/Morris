@@ -1,9 +1,12 @@
 import { BaseGuildVoiceChannel, ChannelType, Client, GatewayIntentBits, Guild, GuildMember } from "discord.js";
-import { AudioPlayer, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
+import { AudioPlayer, NoSubscriberBehavior, createAudioPlayer, createAudioResource, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
 import prism from "prism-media";
-import { pipeline } from "stream";
+import { Readable, pipeline } from "stream";
 import AIUser, { getAIUser } from "./aiUser";
-import { speechToText } from "./components/engines/openai";
+import { assistantNonStreaming, assistantStreaming, speechToText } from "./components/engines/openai";
+import settings from "./settings";
+import { textToSpeechNonStreaming, textToSpeechStreaming } from "./components/engines/gemelo_charactr";
+import { DataStream } from "scramjet";
 
 // These values are chosen for compatibility with picovoice components
 const DECODE_FRAME_SIZE = 1024;
@@ -13,8 +16,8 @@ export default class DiscordClient {
     private apiToken: string;
     private client: Client;
 
-    constructor(apiToken: string) {
-        this.apiToken = apiToken;
+    constructor() {
+        this.apiToken = settings.DISCORD_API_TOKEN;
         this.client = new Client({
             intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
         });
@@ -94,8 +97,39 @@ export default class DiscordClient {
             if (!aiUser.overtalked && aiUser.keywordFlagged) {
                 console.log("Converting to text");
                 const voiceSample = aiUser.getVoiceSample();
-                var asText = await speechToText(voiceSample);
-                console.log(`Text: ${asText}`);
+                let asText = await speechToText(voiceSample);
+                console.log("Passing to assistant");
+                /*
+                let responseStream = await assistantStreaming([{
+                    role: 'user',
+                    content: asText
+                }], userId);
+                */
+                let response = await assistantNonStreaming([{
+                    role: 'user',
+                    content: asText
+                }], userId);
+                console.log("Converting to audio");
+                // let responseTtsStream = await textToSpeechStreaming(responseStream);
+                let responseAudio = await textToSpeechNonStreaming(response);
+
+                let audioPlayer = createAudioPlayer({
+                    behaviors: {
+                        noSubscriber: NoSubscriberBehavior.Pause
+                    }
+                });
+                connection.subscribe(audioPlayer);
+                let resource = createAudioResource(Readable.from(responseAudio));
+                audioPlayer.play(resource);
+                
+                audioPlayer.on('error', (err) => {
+                    console.log(`Audio player error: ${err}`);
+                });
+                audioPlayer.on('stateChange', (oldState, newState) => {
+                    if (newState.status == 'idle') {
+                        console.log("Audio player idle");
+                    }
+                });
             }
         });
 
