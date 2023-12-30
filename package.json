@@ -1,0 +1,28 @@
+{
+  "name": "morris",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@discordjs/voice": "^0.16.1",
+    "@picovoice/leopard-node": "^2.0.1",
+    "@picovoice/porcupine-node": "^3.0.1",
+    "bufferutil": "^4.0.8",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "ffmpeg-static": "^5.2.0",
+    "libsodium-wrappers": "^0.7.13",
+    "openai": "^4.24.1",
+    "opusscript": "^0.0.8",
+    "utf-8-validate": "^6.0.3",
+    "zlib-sync": "^0.1.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6"
+  }
+}

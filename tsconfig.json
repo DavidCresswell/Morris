@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "esModuleInterop": true,
+        "target": "es2016",
+        "jsx": "preserve",
+        "resolveJsonModule": true,
+        "outDir": "out",
+        "sourceMap": true,
+        "skipLibCheck": true
+    },
+    "exclude": [
+        "node_modules",
+        "**/node_modules/*"
+    ]
+}
