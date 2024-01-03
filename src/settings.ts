@@ -2,13 +2,15 @@ import dotenv from 'dotenv';
 
 interface Settings {
     PICOVOICE_KEY: string;
-    OPENAI_KEY: string;
     DISCORD_API_TOKEN: string;
     GEMELO_API_KEY: string;
 
-    OPENAI_MODEL: string;
     WAKEWORD: string;
     SENSITIVITY: string;
+
+    OPENAI_KEY: string;
+    OPENAI_MODEL: string;
+    OPENAI_STREAM_RESPONSE: boolean;
 
     CHARACTR_API_KEY: string;
     CHARACTR_CLIENT_KEY: string;
@@ -36,11 +38,13 @@ if (platform == 'win32') {
 
 let settings: Settings = {
     PICOVOICE_KEY: '',
-    OPENAI_KEY: '',
     DISCORD_API_TOKEN: '',
     GEMELO_API_KEY: '',
 
+    OPENAI_KEY: '',
     OPENAI_MODEL: 'gpt-3.5-turbo-1106',
+    OPENAI_STREAM_RESPONSE: false, // In my testing streaming was around 10x slower than non-streaming, but a search indicates this might vary from time to time
+
     WAKEWORD: `Morris_en_${platform}_v3_0_0.ppn`,
     SENSITIVITY: '1',
 
@@ -57,9 +61,9 @@ let settings: Settings = {
     ELEVENLABS_VOICE_STABILITY: 0.5,
     ELEVENLABS_VOICE_SIMILARITY_BOOST: 0.9,
     ELEVENLABS_VOICE_STYLE: 0.66,
-    ELEVENLABS_VOICE_USE_SPEAKER_BOOST: true,
+    ELEVENLABS_VOICE_USE_SPEAKER_BOOST: false,
     ELEVENLABS_OPTIMIZE_STREAMING_LATENCY: 4,
-    ELEVENLABS_OUTPUT_FORMAT: 'mp3_44100_128'
+    ELEVENLABS_OUTPUT_FORMAT: 'pcm_24000'
 };
 
 

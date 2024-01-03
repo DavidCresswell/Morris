@@ -10,6 +10,8 @@ import { ContextPart } from '../../contextPart';
 import { ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources';
 import { Stream } from 'openai/streaming';
 import settings from '../../settings';
+import StreamValues from 'stream-json/streamers/StreamValues';
+import { chain } from 'stream-chain';
 
 var apiKey = settings.OPENAI_KEY;
 var model = settings.OPENAI_MODEL;
@@ -55,7 +57,7 @@ export async function speechToText(buffer: Buffer) {
 
 async function assistantBase(context: ContextPart[], userId: string, stream: boolean) {
     console.log(`Assistant context: ${JSON.stringify(context)}`);
-    let systemMessage : ContextPart = {
+    let systemMessage: ContextPart = {
         role: 'system',
         content: `You are Morris. You must answer all questions succinctly, with a little humor. The date is ${new Date().toLocaleDateString()} and the time is ${new Date().toLocaleTimeString()}`
     };
@@ -66,6 +68,7 @@ async function assistantBase(context: ContextPart[], userId: string, stream: boo
         }
     });
     console.log("Sending completion request");
+    /*
     var result = await openAI.chat.completions.create({
         model: model,
         messages: [systemMessage, ...messages],
@@ -73,24 +76,81 @@ async function assistantBase(context: ContextPart[], userId: string, stream: boo
         stream: stream,
         user: userId
     });
+    */
+    let result = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: [systemMessage, ...messages],
+            max_tokens: 75,
+            stream: stream,
+            user: userId
+        })
+    });
     console.log("Got completion response");
+
+    if (result.status != 200) {
+        console.log(`Received status ${result.status} from OpenAI API`);
+        let errorBodyString = await result.text();
+        throw new Error(`Received status ${result.status} from OpenAI API: ${errorBodyString}`);
+    }
     return result;
 }
 
-export async function assistantStreaming(context: ContextPart[], userId: string) : Promise<Readable> {
+export async function assistantStreaming(context: ContextPart[], userId: string): Promise<Readable> {
     let stream = new PassThrough();
-    let result = await assistantBase(context, userId, true) as Stream<ChatCompletionChunk>;
-    (async function () {
-        for await (const message of result) {
-            console.log(message);
-            stream.write(message.choices[0].delta.content);
+    let result = await assistantBase(context, userId, true);
+    let resultStream = result.body;
+    let reader = resultStream.getReader();
+    let readable = new Readable({
+        read() {
+            reader.read().then(({ done, value }) => {
+                if (done) {
+                    this.push(null);
+                } else {
+                    let buffer = Buffer.from(value);
+                    let string = buffer.toString();
+                    let lines = string.split('\n');
+                    lines = lines.map((line) => {
+                        if (line.startsWith('data: ')) {
+                            line = line.substring(6);
+                        }
+                        return line;
+                    });
+                    let newString = lines.join('\n');
+                    let newValue = Buffer.from(newString);
+                    this.push(newValue);
+                }
+            });
         }
-    })();
+    });
+    readable.on('end', () => {
+        console.log("assistant stream ended");
+        stream.end();
+    });
+
+    const pipeline = chain([
+        readable,
+        StreamValues.withParser()
+    ]);
+    pipeline.on('data', (chunk) => {
+        let value = chunk.value.choices[0].delta.content;
+        //console.log(value);
+        stream.push(Buffer.from(value));
+    });
     return stream;
 }
 
-export async function assistantNonStreaming(context: ContextPart[], userId: string) {
-    let result = await assistantBase(context, userId, false) as ChatCompletion;
-    console.log(result.choices[0].message.content);
-    return result.choices[0].message.content;
+export async function assistantNonStreaming(context: ContextPart[], userId: string): Promise<Readable> {
+    let result = await assistantBase(context, userId, false);
+    let body = await result.json();
+    console.log(body.choices[0].message.content);
+    let stream = new PassThrough();
+    stream.write(Buffer.from(body.choices[0].message.content));
+    stream.end();
+    return stream;
 }

@@ -13,17 +13,24 @@
     "@discordjs/voice": "^0.16.1",
     "@picovoice/leopard-node": "^2.0.1",
     "@picovoice/porcupine-node": "^3.0.1",
+    "@types/fluent-ffmpeg": "^2.1.24",
     "bufferutil": "^4.0.8",
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
     "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.2",
     "libsodium-wrappers": "^0.7.13",
     "openai": "^4.24.1",
     "opusscript": "^0.0.8",
+    "stream-chain": "^2.2.5",
+    "stream-json": "^1.8.0",
     "utf-8-validate": "^6.0.3",
+    "ws": "^8.16.0",
     "zlib-sync": "^0.1.9"
   },
   "devDependencies": {
-    "@types/node": "^20.10.6"
+    "@types/node": "^20.10.6",
+    "@types/stream-chain": "^2.0.4",
+    "@types/stream-json": "^1.7.7"
   }
 }

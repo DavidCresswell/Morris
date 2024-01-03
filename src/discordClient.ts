@@ -1,12 +1,12 @@
 import { BaseGuildVoiceChannel, ChannelType, Client, GatewayIntentBits, Guild, GuildMember } from "discord.js";
-import { AudioPlayer, NoSubscriberBehavior, createAudioPlayer, createAudioResource, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
+import { AudioPlayer, NoSubscriberBehavior, StreamType, createAudioPlayer, createAudioResource, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
 import prism from "prism-media";
-import { Readable, pipeline } from "stream";
+import { PassThrough, Readable, pipeline } from "stream";
 import AIUser, { getAIUser } from "./aiUser";
 import { assistantNonStreaming, assistantStreaming, speechToText } from "./components/engines/openai";
 import settings from "./settings";
-import { textToSpeechNonStreaming, textToSpeechStreaming } from "./components/engines/gemelo_charactr";
 import * as elevenlabs from './components/engines/elevenlabs';
+import { default as ffmpeg } from "fluent-ffmpeg";
 
 // These values are chosen for compatibility with picovoice components
 const DECODE_FRAME_SIZE = 1024;
@@ -102,21 +102,17 @@ export default class DiscordClient {
                 let time2 = Date.now();
                 console.log(`Speech to text took ${time2 - time1}ms`);
                 console.log("Passing to assistant");
-                /*
+
                 let responseStream = await assistantStreaming([{
                     role: 'user',
                     content: asText
                 }], userId);
-                */
-                let response = await assistantNonStreaming([{
-                    role: 'user',
-                    content: asText
-                }], userId);
+
                 let time3 = Date.now();
                 console.log(`Assistant took ${time3 - time2}ms`);
                 console.log("Converting to audio");
-                // let responseTtsStream = await textToSpeechStreaming(responseStream);
-                let responseAudio = await elevenlabs.textToSpeechStreaming(response) as ReadableStream;
+                
+                let responseAudio = await elevenlabs.textToSpeechDualStreaming(responseStream);
 
                 let time4 = Date.now();
                 console.log(`Text to speech initialisation took ${time4 - time3}ms`);
@@ -127,6 +123,7 @@ export default class DiscordClient {
                     }
                 });
                 connection.subscribe(audioPlayer);
+                /*
                 let reader = responseAudio.getReader();
                 let readable = new Readable({
                     read() {
@@ -138,15 +135,33 @@ export default class DiscordClient {
                             }
                         });
                     }
+                }); */
+
+                let passthrough = new PassThrough();
+
+                // Input sample rate is 24000Hz 1 channel, output is 48000Hz 2 channels
+
+                ffmpeg(responseAudio)
+                    .inputFormat('s16le')
+                    .inputOptions([
+                        '-ar 24000',
+                        '-ac 1'
+                    ])
+                    .outputFormat('s16le')
+                    .outputOptions([
+                        '-ar 48000',
+                        '-ac 2'
+                    ])
+                    .pipe(passthrough);
+
+                passthrough.on('end', () => {
+                    let endTime = Date.now();
+                    console.log(`Audio generation comleted after ${endTime - time4}ms`);
                 });
 
-                readable.on('end', () => {
-                    let time6 = Date.now();
-                    console.log(`Audio generation comleted after ${time6 - time4}ms`);
-                    console.log("Readable ended");
+                let resource = createAudioResource(passthrough, {
+                    inputType: StreamType.Raw
                 });
-
-                let resource = createAudioResource(readable);
                 audioPlayer.play(resource);
 
                 audioPlayer.on('error', (err) => {
@@ -155,9 +170,9 @@ export default class DiscordClient {
                 audioPlayer.on('stateChange', (oldState, newState) => {
                     if (newState.status == 'idle') {
                         console.log("Audio player idle");
-                        let time7 = Date.now();
-                        console.log(`Audio playback took: ${time7 - time4}ms`);
-                        console.log(`Total time: ${time7 - time1}ms`);
+                        let idleTime = Date.now();
+                        console.log(`Audio playback took: ${idleTime - time4}ms`);
+                        console.log(`Total time: ${idleTime - time1}ms`);
                     }
                 });
             }
