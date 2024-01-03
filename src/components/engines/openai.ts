@@ -4,10 +4,10 @@
 // - Text to speech
 
 import { OpenAI } from 'openai';
-import { PassThrough } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import { writeFile } from 'fs';
 import { ContextPart } from '../../contextPart';
-import { ChatCompletionMessageParam } from 'openai/resources';
+import { ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources';
 import { Stream } from 'openai/streaming';
 import settings from '../../settings';
 
@@ -53,38 +53,11 @@ export async function speechToText(buffer: Buffer) {
     return result;
 }
 
-export async function assistantStreaming(context: ContextPart[], userId: string) {
-    let duplexStream = new PassThrough();
-    console.log(`Assistant context: ${JSON.stringify(context)}`);
-    var messages: ChatCompletionMessageParam[] = context.map((part) => {
-        return {
-            role: part.role,
-            content: part.content
-        }
-    });
-    console.log("Awaiting completion");
-    var result = await openAI.chat.completions.create({
-        model: model,
-        messages: messages,
-        max_tokens: 75, // 128
-        stream: true,
-        user: userId
-    });
-    console.log("Got completion stream");
-    (async function () {
-        for await (const message of result) {
-            console.log(message);
-            duplexStream.write(message.choices[0].delta.content);
-        }
-    });
-    return duplexStream;
-}
-
-export async function assistantNonStreaming(context: ContextPart[], userId: string) {
+async function assistantBase(context: ContextPart[], userId: string, stream: boolean) {
     console.log(`Assistant context: ${JSON.stringify(context)}`);
     let systemMessage : ContextPart = {
         role: 'system',
-        content: `You are Morris, answer in only a couple of sentences. You must answer all questions. The date is ${new Date().toLocaleDateString()} and the time is ${new Date().toLocaleTimeString()}`
+        content: `You are Morris. You must answer all questions succinctly, with a little humor. The date is ${new Date().toLocaleDateString()} and the time is ${new Date().toLocaleTimeString()}`
     };
     var messages: ChatCompletionMessageParam[] = context.map((part) => {
         return {
@@ -92,15 +65,32 @@ export async function assistantNonStreaming(context: ContextPart[], userId: stri
             content: part.content
         }
     });
-    console.log("Awaiting completion");
+    console.log("Sending completion request");
     var result = await openAI.chat.completions.create({
         model: model,
         messages: [systemMessage, ...messages],
-        max_tokens: 12, // 128
-        stream: false,
+        max_tokens: 75,
+        stream: stream,
         user: userId
     });
-    console.log("Got completion");
+    console.log("Got completion response");
+    return result;
+}
+
+export async function assistantStreaming(context: ContextPart[], userId: string) : Promise<Readable> {
+    let stream = new PassThrough();
+    let result = await assistantBase(context, userId, true) as Stream<ChatCompletionChunk>;
+    (async function () {
+        for await (const message of result) {
+            console.log(message);
+            stream.write(message.choices[0].delta.content);
+        }
+    })();
+    return stream;
+}
+
+export async function assistantNonStreaming(context: ContextPart[], userId: string) {
+    let result = await assistantBase(context, userId, false) as ChatCompletion;
     console.log(result.choices[0].message.content);
     return result.choices[0].message.content;
 }

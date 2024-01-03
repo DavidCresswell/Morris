@@ -6,7 +6,7 @@ import AIUser, { getAIUser } from "./aiUser";
 import { assistantNonStreaming, assistantStreaming, speechToText } from "./components/engines/openai";
 import settings from "./settings";
 import { textToSpeechNonStreaming, textToSpeechStreaming } from "./components/engines/gemelo_charactr";
-import { DataStream } from "scramjet";
+import * as elevenlabs from './components/engines/elevenlabs';
 
 // These values are chosen for compatibility with picovoice components
 const DECODE_FRAME_SIZE = 1024;
@@ -95,9 +95,12 @@ export default class DiscordClient {
             console.log(`User ${user?.displayName} stopped speaking`);
             const aiUser = getAIUser(userId);
             if (!aiUser.overtalked && aiUser.keywordFlagged) {
+                let time1 = Date.now();
                 console.log("Converting to text");
                 const voiceSample = aiUser.getVoiceSample();
                 let asText = await speechToText(voiceSample);
+                let time2 = Date.now();
+                console.log(`Speech to text took ${time2 - time1}ms`);
                 console.log("Passing to assistant");
                 /*
                 let responseStream = await assistantStreaming([{
@@ -109,9 +112,14 @@ export default class DiscordClient {
                     role: 'user',
                     content: asText
                 }], userId);
+                let time3 = Date.now();
+                console.log(`Assistant took ${time3 - time2}ms`);
                 console.log("Converting to audio");
                 // let responseTtsStream = await textToSpeechStreaming(responseStream);
-                let responseAudio = await textToSpeechNonStreaming(response);
+                let responseAudio = await elevenlabs.textToSpeechStreaming(response) as ReadableStream;
+
+                let time4 = Date.now();
+                console.log(`Text to speech initialisation took ${time4 - time3}ms`);
 
                 let audioPlayer = createAudioPlayer({
                     behaviors: {
@@ -119,15 +127,37 @@ export default class DiscordClient {
                     }
                 });
                 connection.subscribe(audioPlayer);
-                let resource = createAudioResource(Readable.from(responseAudio));
+                let reader = responseAudio.getReader();
+                let readable = new Readable({
+                    read() {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                this.push(null);
+                            } else {
+                                this.push(value);
+                            }
+                        });
+                    }
+                });
+
+                readable.on('end', () => {
+                    let time6 = Date.now();
+                    console.log(`Audio generation comleted after ${time6 - time4}ms`);
+                    console.log("Readable ended");
+                });
+
+                let resource = createAudioResource(readable);
                 audioPlayer.play(resource);
-                
+
                 audioPlayer.on('error', (err) => {
                     console.log(`Audio player error: ${err}`);
                 });
                 audioPlayer.on('stateChange', (oldState, newState) => {
                     if (newState.status == 'idle') {
                         console.log("Audio player idle");
+                        let time7 = Date.now();
+                        console.log(`Audio playback took: ${time7 - time4}ms`);
+                        console.log(`Total time: ${time7 - time1}ms`);
                     }
                 });
             }
@@ -167,7 +197,7 @@ export default class DiscordClient {
             console.log(`Opus decoder for ${member?.displayName} closed`);
         });
 
-        opusDecoder.on('data', (packet : Buffer) => {
+        opusDecoder.on('data', (packet: Buffer) => {
             aiUser.addVoiceData(packet);
         });
         receiveStream.on('close', () => {
