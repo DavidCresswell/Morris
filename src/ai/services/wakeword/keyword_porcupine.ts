@@ -2,7 +2,9 @@
 
 import { Porcupine } from "@picovoice/porcupine-node";
 import path from "path";
-import settings from "../../settings";
+import settings from "../../../settings";
+import { KeywordDetector } from "../../types";
+import { Readable } from "stream";
 
 var porcupineKey = settings.PICOVOICE_KEY;
 const wakewordPath = path.resolve('wakeword', settings.WAKEWORD);
@@ -53,4 +55,36 @@ interface KeywordDetectionDetails {
     porcupine: Porcupine;
     porcupineBuffer: Buffer;
     porcupineBufferIndex: number;
+}
+
+export class PorcupineKeywordDetector implements KeywordDetector {
+    private porcupine: Porcupine;
+    private porcupineBuffer: Buffer;
+    private porcupineBufferIndex: number;
+    constructor() {
+        this.porcupine = new Porcupine(porcupineKey, [wakewordPath], [sensitivity]);
+        this.porcupineBuffer = Buffer.alloc(this.porcupine.frameLength * 2);
+        this.porcupineBufferIndex = 0;
+    }
+    detectKeyword(input: Buffer) {
+        var fromBufferIx = 0;
+        while (fromBufferIx < input.length) {
+            const toBufferIx = Math.min(input.length, fromBufferIx + this.porcupineBuffer.length - this.porcupineBufferIndex);
+            input.copy(this.porcupineBuffer, this.porcupineBufferIndex, fromBufferIx, toBufferIx);
+            this.porcupineBufferIndex += toBufferIx - fromBufferIx;
+            fromBufferIx = toBufferIx;
+            if (this.porcupineBufferIndex >= this.porcupineBuffer.length) {
+                this.porcupineBufferIndex = 0;
+                const sampleIndex = this.porcupine.process(new Int16Array(this.porcupineBuffer.buffer));
+                if (sampleIndex != -1) {
+                    console.log(`Keyword detected!`);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    dispose() {
+        this.porcupine.release();
+    }
 }

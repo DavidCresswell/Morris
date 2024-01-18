@@ -1,7 +1,7 @@
 // https://github.com/coqui-ai/TTS
 // https://docs.coqui.ai/en/latest/docker_images.html#start-a-server
 
-import settings from "../../settings";
+import settings from "../../../settings";
 
 var coquiServer = settings.COQUI_TTS_ENDPOINT;
 var coquiSpeakerId = settings.COQUI_SPEAKER_ID;

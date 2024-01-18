@@ -1,22 +1,32 @@
 import { BaseGuildVoiceChannel, ChannelType, Client, GatewayIntentBits, Guild, GuildMember } from "discord.js";
-import { AudioPlayer, NoSubscriberBehavior, StreamType, createAudioPlayer, createAudioResource, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
+import { NoSubscriberBehavior, StreamType, VoiceConnection, createAudioPlayer, createAudioResource, getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
 import prism from "prism-media";
 import { PassThrough, Readable, pipeline } from "stream";
-import AIUser, { getAIUser } from "./aiUser";
-import { assistantNonStreaming, assistantStreaming, speechToText } from "./components/engines/openai";
 import settings from "./settings";
-import * as elevenlabs from './components/engines/elevenlabs';
 import { default as ffmpeg } from "fluent-ffmpeg";
+import { EventEmitter } from "events";
 
 // These values are chosen for compatibility with picovoice components
 const DECODE_FRAME_SIZE = 1024;
 const DECODE_SAMPLE_RATE = 16000;
 
-export default class DiscordClient {
+export default interface DiscordClient {
+    /**
+     * Fired when a user starts speaking
+     * Outputs a PCM stream at 16kHz 1 channel
+     */
+    on(event: 'userStream', listener: (userId: string, audioStream: Readable) => void): this;
+}
+
+export default class DiscordClient extends EventEmitter {
     private apiToken: string;
     private client: Client;
 
+    private streams: Map<string, Readable> = new Map();
+    private connections: Map<string, VoiceConnection> = new Map();
+
     constructor() {
+        super();
         this.apiToken = settings.DISCORD_API_TOKEN;
         this.client = new Client({
             intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
@@ -78,118 +88,27 @@ export default class DiscordClient {
         });
 
         for (const [id, member] of channel.members) {
+            if (member.user.bot) continue;
             this.monitorMember(member);
         }
 
         connection.receiver.speaking.on('start', (userId) => {
             const user = channel.members.get(userId);
             if (user.user.bot) return;
-            var aiUser = getAIUser(userId);
-            console.log(`User ${user?.displayName} started speaking`);
-            aiUser.start();
             this.monitorMember(user);
+            this.streams.get(userId)?.emit('speakingStarted');
         });
 
         connection.receiver.speaking.on('end', async (userId) => {
             const user = channel.members.get(userId);
-            console.log(`User ${user?.displayName} stopped speaking`);
-            const aiUser = getAIUser(userId);
-            if (!aiUser.overtalked && aiUser.keywordFlagged) {
-                let time1 = Date.now();
-                console.log("Converting to text");
-                const voiceSample = aiUser.getVoiceSample();
-                let asText = await speechToText(voiceSample);
-                let time2 = Date.now();
-                console.log(`Speech to text took ${time2 - time1}ms`);
-                console.log("Passing to assistant");
-
-                let responseStream = await assistantStreaming([{
-                    role: 'user',
-                    content: asText
-                }], userId);
-
-                let time3 = Date.now();
-                console.log(`Assistant took ${time3 - time2}ms`);
-                console.log("Converting to audio");
-                
-                let responseAudio = await elevenlabs.textToSpeechDualStreaming(responseStream);
-
-                let time4 = Date.now();
-                console.log(`Text to speech initialisation took ${time4 - time3}ms`);
-
-                let audioPlayer = createAudioPlayer({
-                    behaviors: {
-                        noSubscriber: NoSubscriberBehavior.Pause
-                    }
-                });
-                connection.subscribe(audioPlayer);
-                /*
-                let reader = responseAudio.getReader();
-                let readable = new Readable({
-                    read() {
-                        reader.read().then(({ done, value }) => {
-                            if (done) {
-                                this.push(null);
-                            } else {
-                                this.push(value);
-                            }
-                        });
-                    }
-                }); */
-
-                let passthrough = new PassThrough();
-
-                // Input sample rate is 24000Hz 1 channel, output is 48000Hz 2 channels
-
-                ffmpeg(responseAudio)
-                    .inputFormat('s16le')
-                    .inputOptions([
-                        '-ar 24000',
-                        '-ac 1'
-                    ])
-                    .outputFormat('s16le')
-                    .outputOptions([
-                        '-ar 48000',
-                        '-ac 2'
-                    ])
-                    .pipe(passthrough);
-
-                passthrough.on('end', () => {
-                    let endTime = Date.now();
-                    console.log(`Audio generation comleted after ${endTime - time4}ms`);
-                });
-
-                let resource = createAudioResource(passthrough, {
-                    inputType: StreamType.Raw
-                });
-                audioPlayer.play(resource);
-
-                audioPlayer.on('error', (err) => {
-                    console.log(`Audio player error: ${err}`);
-                });
-                audioPlayer.on('stateChange', (oldState, newState) => {
-                    if (newState.status == 'idle') {
-                        console.log("Audio player idle");
-                        let idleTime = Date.now();
-                        console.log(`Audio playback took: ${idleTime - time4}ms`);
-                        console.log(`Total time: ${idleTime - time1}ms`);
-                    }
-                });
-            }
+            if (user.user.bot) return;
+            this.streams.get(userId)?.emit('speakingStopped');
         });
-
-        /*
-        connection.receiver.onUdpMessage = (packet) => {
-            console.log("udp packet:");
-            console.log(packet);
-        };
-        */
     }
 
     private async monitorMember(member: GuildMember) {
         const userId = member.id;
         const connection = getVoiceConnection(member.guild.id);
-        const aiUser = getAIUser(userId);
         const receiveStream = connection.receiver.subscribe(userId, {
             autoDestroy: true,
             emitClose: true
@@ -205,18 +124,100 @@ export default class DiscordClient {
                 console.log(`Opus decoding pipeline error: ${err}`);
             }
         });
+        this.streams.set(userId, opusDecoder);
+        this.connections.set(userId, connection);
         opusDecoder.on('error', (err) => {
             console.log(`Opus decoding error: ${err}`);
         });
         opusDecoder.on('close', () => {
             console.log(`Opus decoder for ${member?.displayName} closed`);
         });
-
-        opusDecoder.on('data', (packet: Buffer) => {
-            aiUser.addVoiceData(packet);
-        });
+        this.emit('userStream', userId, opusDecoder);
         receiveStream.on('close', () => {
             console.log(`voice stream from ${member?.displayName} closed`);
+        });
+    }
+
+    async playAudioStream(userId: string, audioStream: Readable) {
+        const connection = this.connections.get(userId);
+        if (connection == null) {
+            console.log(`No connection for user ${userId}`);
+            return;
+        }
+        let audioPlayer = createAudioPlayer({
+            behaviors: {
+                noSubscriber: NoSubscriberBehavior.Pause
+            }
+        });
+        connection.subscribe(audioPlayer);
+    
+        const audioStartTime = Date.now();
+
+        /*
+        const transformer = new AudioConversionStream({
+            inputChannels: 1,
+            inputSampleRate: 16000,
+            outputChannels: 2,
+            outputSampleRate: 48000
+        });
+        */
+
+
+        /*
+        const transformer = ffmpeg(audioStream)
+            .inputFormat('s16le')
+            .inputOptions([
+                '-ac 1',
+                '-ar 16000'
+            ])
+            .outputFormat('s16le')
+            .outputOptions([
+                '-ac 2',
+                '-ar 48000'
+            ]);
+        */
+
+        /*
+        const transformer = new prism.FFmpeg({
+            args: [
+                '-f', 's16le',
+                '-ar', '16000',
+                '-ac', '1',
+                '-i', '-',
+                '-f', 's16le',
+                '-ar', '48000',
+                '-ac', '2'
+            ]
+        });
+
+        const transformer = new PassThrough();
+
+        transformer.on('error', (err) => {
+            console.log(`Audio conversion error: ${err}`);
+        });
+
+        transformer.on('close', () => {
+            console.log(`Audio conversion closed`);
+        });
+
+        audioStream.pipe(transformer);
+        */
+
+        let resource = createAudioResource(audioStream, {
+            inputType: StreamType.Arbitrary
+        });
+        audioPlayer.play(resource);
+
+        audioPlayer.on('error', (err) => {
+            console.log(`Audio player error: ${err}`);
+        });
+
+        audioPlayer.on('stateChange', (oldState, newState) => {
+            console.log("Audio player " + newState.status);
+            if (newState.status == 'idle') {
+                let idleTime = Date.now();
+                console.log(`Audio playback took: ${idleTime - audioStartTime}ms`);
+            }
         });
     }
 }

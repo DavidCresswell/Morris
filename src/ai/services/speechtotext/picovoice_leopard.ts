@@ -1,5 +1,5 @@
 import { Leopard } from "@picovoice/leopard-node";
-import settings from "../../settings";
+import settings from "../../../settings";
 
 const leopard = new Leopard(settings.PICOVOICE_KEY);
 
