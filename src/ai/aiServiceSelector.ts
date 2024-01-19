@@ -2,6 +2,7 @@ import settings from "../settings";
 import * as openai_assistant from "./services/assistant/openai";
 import * as cloudflare_assistant from "./services/assistant/cloudflare";
 import * as openai_speechtotext from "./services/speechtotext/openai";
+import * as cloudflare_speechtotext from "./services/speechtotext/cloudflare";
 import * as elevenlabs from "./services/texttospeech/elevenlabs";
 import * as porcupine from "./services/wakeword/keyword_porcupine";
 import * as charactr from "./services/texttospeech/gemelo_charactr";
@@ -30,6 +31,8 @@ export function getSpeechToTextService() {
     switch (settings.SPEECH_TO_TEXT_SERVICE) {
         case "openai":
             return openai_speechtotext.speechToText;
+        case "cloudflare":
+            return cloudflare_speechtotext.speechToText;
         default:
             throw new Error(`Unknown speech to text service ${settings.SPEECH_TO_TEXT_SERVICE}`);
     }

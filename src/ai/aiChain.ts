@@ -55,7 +55,7 @@ const aiChain = {
         const context : ContextPart[] = [
             {
                 role: 'system',
-                content: settings.SYSTEM_PROMPT
+                content: settings.SYSTEM_PROMPT.replace('{{date}}', new Date().toLocaleDateString()).replace('{{time}}', new Date().toLocaleTimeString())
             }
         ]
         context.push(...getContextForUser(userId));

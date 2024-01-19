@@ -1,25 +1,13 @@
 import OpenAI from "openai";
 import settings from "../../../settings";
+import { getWavHeader } from "../../util";
 
 var openAI = new OpenAI({
     apiKey: settings.OPENAI_KEY
 });
 
 export async function speechToText(buffer: Buffer) {
-    var wavHeader = Buffer.alloc(44);
-    wavHeader.write('RIFF', 0);
-    wavHeader.writeUInt32LE(36 + buffer.length, 4); // Length of entire file in bytes minus 8
-    wavHeader.write('WAVE', 8);
-    wavHeader.write('fmt ', 12);
-    wavHeader.writeUInt32LE(16, 16); // Length of format data
-    wavHeader.writeUInt16LE(1, 20); // Type of format (1 is PCM)
-    wavHeader.writeUInt16LE(1, 22); // Number of channels
-    wavHeader.writeUInt32LE(16000, 24); // Sample rate
-    wavHeader.writeUInt32LE(32000, 28); // Byte rate
-    wavHeader.writeUInt16LE(2, 32); // Block align ((BitsPerSample * Channels) / 8)
-    wavHeader.writeUInt16LE(16, 34); // Bits per sample
-    wavHeader.write('data', 36); // Data chunk header
-    wavHeader.writeUInt32LE(buffer.length, 40); // Data chunk size
+    var wavHeader = getWavHeader(buffer.length, 16000);
 
     const file = new File([wavHeader, buffer], 'audio.wav', { type: 'audio/wav' });
 

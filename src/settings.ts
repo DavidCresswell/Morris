@@ -5,7 +5,7 @@ interface Settings {
     DISCORD_API_TOKEN: string;
 
     WAKEWORD_SERVICE: 'porcupine';
-    SPEECH_TO_TEXT_SERVICE: 'openai';
+    SPEECH_TO_TEXT_SERVICE: 'openai' | 'cloudflare';
     ASSISTANT_SERVICE: 'openai' | 'cloudflare';
     TEXT_TO_SPEECH_SERVICE: 'elevenlabs' | 'coqui' | 'charactr';
 
@@ -58,8 +58,8 @@ let settings: Settings = {
     DISCORD_API_TOKEN: '',
 
     WAKEWORD_SERVICE: 'porcupine',
-    SPEECH_TO_TEXT_SERVICE: 'openai',
-    ASSISTANT_SERVICE: 'openai',
+    SPEECH_TO_TEXT_SERVICE: 'cloudflare',
+    ASSISTANT_SERVICE: 'cloudflare',
     TEXT_TO_SPEECH_SERVICE: 'elevenlabs',
 
     STREAM_ASSISTANT_TO_TTS: false, // Usually streaming is faster, sometimes much slower, probably depending on openAI's service load

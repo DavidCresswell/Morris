@@ -8,7 +8,7 @@ export async function readableToString(readable: Readable): Promise<string> {
     return result;
 }
 
-export function prependWavHeader(readable: Readable, audioLength: number, sampleRate: number, channelCount: number = 1, bitsPerSample: number = 16): Readable {
+export function getWavHeader(audioLength: number, sampleRate: number, channelCount: number = 1, bitsPerSample: number = 16): Buffer {
     const wavHeader = Buffer.alloc(44);
     wavHeader.write('RIFF', 0);
     wavHeader.writeUInt32LE(36 + audioLength, 4); // Length of entire file in bytes minus 8
@@ -23,6 +23,11 @@ export function prependWavHeader(readable: Readable, audioLength: number, sample
     wavHeader.writeUInt16LE(bitsPerSample, 34); // Bits per sample
     wavHeader.write('data', 36); // Data chunk header
     wavHeader.writeUInt32LE(audioLength, 40); // Data chunk size
+    return wavHeader;
+}
+
+export function prependWavHeader(readable: Readable, audioLength: number, sampleRate: number, channelCount: number = 1, bitsPerSample: number = 16): Readable {
+    const wavHeader = getWavHeader(audioLength, sampleRate, channelCount, bitsPerSample);
     let pushedHeader = false;
     const passThrough = new PassThrough();
     readable.on('data', function (data) {
